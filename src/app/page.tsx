@@ -182,6 +182,7 @@ export default function Home() {
                 <div className="text-sm text-slate-800 max-w-[70vw] break-all whitespace-normal">
                   {shareUrl}
                 </div>
+</div>
 
                 <div className="relative flex items-center gap-2">
                   {/* Tooltip */}
@@ -218,17 +219,16 @@ export default function Home() {
                     New Upload
                   </button>
                 </div>
-              </div>
 
               {/* PREVIEW */}
               {previewUrl && (
-                <div className="bg-white border rounded p-3">
+                <div className=" rounded p-3">
                   <p className="text-xs text-gray-500 mb-2">Preview</p>
                   <div className="flex justify-center">
                     <img
                       src={previewUrl}
                       alt="Screenshot preview"
-                      className="max-h-72 max-w-full rounded"
+                      className="max-h-72 max-w-full border rounded"
                     />
                   </div>
                 </div>
