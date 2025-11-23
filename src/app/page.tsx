@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+
 export default function Home() {
   const [status, setStatus] = useState<
     "idle" | "dragover" | "uploading" | "done" | "error"
   >("idle");
-  const [link, setLink] = useState<string>("");
+
+  const [shareUrl, setShareUrl] = useState<string>("");
+  const [previewUrl, setPreviewUrl] = useState<string>("");
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const tooltipTimerRef = useRef<number | null>(null);
 
@@ -17,9 +20,7 @@ export default function Home() {
       for (const item of items) {
         if (item.type.startsWith("image/")) {
           const file = item.getAsFile();
-          if (file) {
-            uploadScreenshot(file);
-          }
+          if (file) uploadScreenshot(file);
           break;
         }
       }
@@ -28,18 +29,19 @@ export default function Home() {
     function handleDrop(e: DragEvent) {
       e.preventDefault();
       const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
+      if (!files?.length) return;
+
       const file = files[0];
       if (file.type.startsWith("image/")) uploadScreenshot(file);
     }
 
     function handleDragOver(e: DragEvent) {
       e.preventDefault();
-      setStatus((s) => (s === "uploading" ? s : "dragover"));
+      if (status !== "uploading") setStatus("dragover");
     }
 
     function handleDragLeave() {
-      setStatus((s) => (s === "uploading" ? s : "idle"));
+      if (status !== "uploading") setStatus("idle");
     }
 
     window.addEventListener("paste", handlePaste as any);
@@ -52,14 +54,11 @@ export default function Home() {
       window.removeEventListener("drop", handleDrop as any);
       window.removeEventListener("dragover", handleDragOver as any);
       window.removeEventListener("dragleave", handleDragLeave as any);
-      if (tooltipTimerRef.current) {
-        clearTimeout(tooltipTimerRef.current);
-      }
     };
-  }, []);
-
+  }, [status]);
   async function uploadScreenshot(file: File) {
     setStatus("uploading");
+
     const form = new FormData();
     form.append("file", file);
 
@@ -68,15 +67,27 @@ export default function Home() {
         method: "POST",
         body: form,
       });
+
       const data = await res.json();
 
-      if (data?.url) {
-        setLink(data.url);
+      const share = data?.shareUrl ?? data?.url ?? null;
+      const preview = data?.previewUrl ?? data?.signedUrl ?? null;
+
+      if (share) {
+        setShareUrl(share);
+        setPreviewUrl(preview);
         setStatus("done");
-      } else {
-        console.error("Upload error:", data);
-        setStatus("error");
+        return;
       }
+
+      if (data?.error) {
+        console.error("Upload API error:", data.error);
+        setStatus("error");
+        return;
+      }
+
+      console.error("Unexpected upload response:", data);
+      setStatus("error");
     } catch (err) {
       console.error("Upload failed", err);
       setStatus("error");
@@ -84,31 +95,26 @@ export default function Home() {
   }
 
   async function copyLink() {
-    if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
+    if (!shareUrl) return;
 
-      // show tooltip
-      setTooltipVisible(true);
-      if (tooltipTimerRef.current) window.clearTimeout(tooltipTimerRef.current);
-      tooltipTimerRef.current = window.setTimeout(() => {
-        setTooltipVisible(false);
-      }, 2500);
-    } catch (e) {
-      console.error("Copy failed", e);
-    }
+    await navigator.clipboard.writeText(shareUrl);
+
+    setTooltipVisible(true);
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+
+    tooltipTimerRef.current = window.setTimeout(() => {
+      setTooltipVisible(false);
+    }, 2000);
   }
 
   function resetUpload() {
-    setLink("");
+    setShareUrl("");
+    setPreviewUrl("");
     setStatus("idle");
     setTooltipVisible(false);
-    if (tooltipTimerRef.current) {
-      window.clearTimeout(tooltipTimerRef.current);
-      tooltipTimerRef.current = null;
-    }
   }
 
+  //FrontEnd UI
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-2xl">
@@ -116,127 +122,117 @@ export default function Home() {
           Quick Screenshot Share
         </h1>
 
-        {/* Show upload area only when not done */}
+        {/* UPLOAD AREA (HIDDEN AFTER UPLOAD) */}
         {status !== "done" && (
           <div
-            aria-label="Paste or drop area"
-            role="region"
+            aria-label="Paste or Drop Area"
             className={`
-              flex items-center justify-center flex-col gap-3 p-8 rounded-lg
-              transition-colors border-2
-              ${status === "dragover" ? "border-dashed border-blue-400 bg-white" : "border-dashed border-gray-300 bg-white"}
-              hover:border-blue-400
-              focus-within:ring-2 focus-within:ring-blue-300
+              flex flex-col items-center justify-center gap-4 p-10 rounded-lg border-2 transition-colors
+              ${
+                status === "dragover"
+                  ? "border-blue-400 bg-white border-dashed"
+                  : "border-gray-300 bg-white border-dashed"
+              }
             `}
           >
-            <div className="w-full text-center">
-              <div
-                className={`
-                  mx-auto max-w-lg p-8 rounded-md
-                  ${status === "dragover" ? "bg-blue-50" : "bg-white"}
+            <p className="text-gray-600 text-sm">
+              Paste a screenshot (Ctrl/Cmd + V) or drag & drop an image here
+            </p>
+
+            <div
+              className={`w-48 h-28 flex items-center justify-center border-2 rounded-md text-gray-400 text-xs
+                  ${
+                    status === "dragover"
+                      ? "border-blue-300 border-dashed"
+                      : "border-gray-200 border-dashed"
+                  }
                 `}
-              >
-                <p className="text-sm text-gray-600 mb-2">
-                  Paste a screenshot (Ctrl/Cmd + V) or drag & drop an image here
-                </p>
-                <div
-                  className={`
-                    pointer-events-none mx-auto w-48 h-28 rounded-md
-                    flex items-center justify-center text-gray-400 text-xs
-                    ${status === "dragover" ? "border-2 border-dashed border-blue-300" : "border-2 border-dashed border-gray-200"}
-                  `}
-                >
-                  Drop / Paste Area
-                </div>
-              </div>
+            >
+              Drop / Paste Area
             </div>
 
-            <div className="text-xs text-gray-400">
-              Supported: PNG, JPG. Max size: 10MB.
-            </div>
+            <p className="text-xs text-gray-400">PNG, JPG — Max 10MB</p>
           </div>
         )}
 
+        {/* STATUS / RESULTS */}
         <div className="mt-6">
           {status === "idle" && (
-            <p className="text-sm text-gray-600 text-center">
-              Waiting for paste or drop...
+            <p className="text-center text-gray-600 text-sm">
+              Waiting for screenshot…
             </p>
           )}
 
           {status === "uploading" && (
             <div className="flex items-center gap-2">
-              <div className="loader h-4 w-4 rounded-full animate-pulse bg-blue-500" />
-              <span className="text-sm text-blue-600">Uploading…</span>
+              <div className="h-3 w-3 bg-blue-500 rounded-full animate-pulse" />
+              <span className="text-blue-600 text-sm">Uploading…</span>
             </div>
           )}
 
           {status === "error" && (
-            <p className="text-sm text-red-600">Upload failed. Try again.</p>
+            <p className="text-red-600 text-sm">Upload failed. Try again.</p>
           )}
 
-          {status === "done" && link && (
-            <div className="mt-4 flex flex-col gap-4 items-start">
-              {/* Link box */}
-              <div className="w-full bg-white border rounded-md p-3 flex items-center justify-between gap-4">
-                <div className="text-sm text-slate-800 max-w-[70vw] break-words break-all whitespace-normal">
-                {link}
+          {/* DONE — SHARE URL + PREVIEW */}
+          {status === "done" && shareUrl && (
+            <div className="flex flex-col gap-4 mt-4">
+              {/* SHARE LINK BOX */}
+              <div className="w-full bg-white border rounded-md p-3 flex justify-between gap-4">
+                <div className="text-sm text-slate-800 max-w-[70vw] break-all whitespace-normal">
+                  {shareUrl}
                 </div>
-
 
                 <div className="relative flex items-center gap-2">
                   {/* Tooltip */}
                   <div
-                    aria-hidden={!tooltipVisible}
-                    className={`absolute -top-10 right-0 transform transition-all duration-200 ${
-                      tooltipVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 pointer-events-none"
+                    className={`absolute -top-10 right-0 transition-all ${
+                      tooltipVisible
+                        ? "opacity-100 translate-y-0"
+                        : "opacity-0 -translate-y-1 pointer-events-none"
                     }`}
                   >
-                    <div className="bg-black text-white text-xs px-2 py-1 rounded-md shadow">
+                    <div className="bg-black text-white text-xs px-2 py-1 rounded shadow">
                       Copied!
                     </div>
                   </div>
 
                   <button
                     onClick={copyLink}
-                    className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    aria-label="Copy link to clipboard"
+                    className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                   >
                     Copy
                   </button>
 
                   <button
-                    onClick={() => window.open(link, "_blank")}
-                    className="px-3 py-1 bg-gray-100 text-slate-800 text-sm rounded hover:bg-gray-200"
-                    aria-label="Open link in new tab"
+                    onClick={() => window.open(shareUrl, "_blank")}
+                    className="px-3 py-1 bg-gray-100 text-sm rounded hover:bg-gray-200"
                   >
                     Open
                   </button>
 
                   <button
                     onClick={resetUpload}
-                    className="px-3 py-1 bg-gray-50 text-slate-700 text-sm rounded border hover:bg-gray-100"
-                    aria-label="Start new upload"
+                    className="px-3 py-1 bg-gray-50 border text-sm rounded hover:bg-gray-100"
                   >
                     New Upload
                   </button>
                 </div>
               </div>
 
-              {/* Preview */}
-              <div className="w-full bg-white border rounded-md p-2">
-                <p className="text-xs text-gray-500 mb-2">Preview</p>
-                <div className="flex items-center justify-center">
-                  <img
-                    src={link}
-                    alt="Screenshot preview"
-                    className="max-h-72 max-w-full rounded"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
+              {/* PREVIEW */}
+              {previewUrl && (
+                <div className="bg-white border rounded p-3">
+                  <p className="text-xs text-gray-500 mb-2">Preview</p>
+                  <div className="flex justify-center">
+                    <img
+                      src={previewUrl}
+                      alt="Screenshot preview"
+                      className="max-h-72 max-w-full rounded"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>

@@ -1,66 +1,57 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin"; // service role client
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { nanoid } from "nanoid";
 
 export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
     const id = nanoid(10);
     const ext = file.type === "image/png" ? "png" : "jpg";
     const filePath = `${id}.${ext}`;
 
-    // Convert File -> Buffer (Node environment)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to private bucket with admin client
+    // upload
     const { error: uploadError } = await supabaseAdmin.storage
       .from("screenshots")
-      .upload(filePath, buffer, {
-        contentType: file.type,
-        cacheControl: "3600",
-        upsert: false,
-      });
+      .upload(filePath, buffer, { contentType: file.type, upsert: false });
 
-    if (uploadError) {
-      console.error("uploadError:", uploadError);
-      return NextResponse.json({ error: uploadError.message }, { status: 500 });
-    }
+    if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
-    // insert DB row with expiry (24 hours)
+    // insert DB row with expiry
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-    // Use service role client to bypass RLS (safe because server-only)
     const { error: dbErr } = await supabaseAdmin
       .from("screenshots")
-      .insert([
-        { id, storage_path: filePath, created_at: new Date().toISOString(), expires_at: expiresAt },
-      ]);
+      .insert([{ id, storage_path: filePath, expires_at: expiresAt }]);
 
     if (dbErr) {
-      console.error("dbErr:", dbErr);
-      // attempt to delete uploaded object if DB insert failed
       await supabaseAdmin.storage.from("screenshots").remove([filePath]);
       return NextResponse.json({ error: dbErr.message }, { status: 500 });
     }
 
-    // Create signed URL valid for 24 hours (seconds)
+    // create signed preview URL
     const { data: signedData, error: signedErr } = await supabaseAdmin.storage
       .from("screenshots")
       .createSignedUrl(filePath, 60 * 60 * 24);
 
-    if (signedErr) {
-      console.error("signedErr:", signedErr);
-      return NextResponse.json({ error: signedErr.message }, { status: 500 });
+    if (signedErr || !signedData?.signedUrl) {
+      return NextResponse.json({ error: "Could not create preview URL" }, { status: 500 });
     }
 
-    return NextResponse.json({ url: signedData.signedUrl, id, expires_at: expiresAt });
+    // shareable app URL
+    const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const shareUrl = `${base.replace(/\/$/, "")}/s/${id}`;
+
+    return NextResponse.json({
+      id,
+      shareUrl,
+      previewUrl: signedData.signedUrl,
+      expires_at: expiresAt,
+    });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
