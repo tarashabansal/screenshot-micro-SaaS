@@ -1,34 +1,13 @@
-// scripts/cleanup.js
 
-// ---- 1) Load env vars safely (works in ESM & CommonJS) ----
-import path from "path";
-import fs from "fs";
-import dotenv from "dotenv";
-
-// Determine project root
-const root = process.cwd();
-
-// Load .env.local if present
-const envLocal = path.join(root, ".env.local");
-if (fs.existsSync(envLocal)) {
-  dotenv.config({ path: envLocal });
-}
-
-// Also load default .env if exists
-const envDefault = path.join(root, ".env");
-if (fs.existsSync(envDefault)) {
-  dotenv.config({ path: envDefault });
-}
-
-// ---- 2) Now import Supabase ----
-import { createClient } from "@supabase/supabase-js";
+require("dotenv").config({ path: ".env.local" });
+const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   console.error("Missing env vars: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  console.error("Values:", { SUPABASE_URL, SERVICE_ROLE });
+  console.error("Values:", { SUPABASE_URL: !!SUPABASE_URL, SERVICE_ROLE: !!SERVICE_ROLE });
   process.exit(1);
 }
 
@@ -36,7 +15,6 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 const DRY_RUN = process.env.DRY_RUN === "1" || process.argv.includes("--dry-run");
 
-// ---- 3) Cleanup Logic ----
 async function cleanup() {
   console.log("Running cleanup... DRY_RUN=", DRY_RUN);
 
@@ -83,4 +61,7 @@ async function cleanup() {
   console.log("Cleanup done.");
 }
 
-cleanup();
+cleanup().catch((err) => {
+  console.error("Cleanup failed:", err);
+  process.exit(1);
+});

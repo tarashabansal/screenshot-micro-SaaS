@@ -1,6 +1,5 @@
-// src/app/s/[id]/page.tsx
-import { supabase } from "@/lib/supabase"; // for DB reads if you prefer anon reads
-import { supabaseAdmin } from "@/lib/supabaseAdmin"; // server-only client for signed URLs
+import { supabase } from "@/lib/supabase"; 
+import { supabaseAdmin } from "@/lib/supabaseAdmin"; 
 
 interface Props {
   params: Promise<{ id: string }>;
