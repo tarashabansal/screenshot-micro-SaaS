@@ -1,13 +1,15 @@
-import { supabase } from "@/lib/supabase";
+// src/app/s/[id]/page.tsx
+import { supabase } from "@/lib/supabase"; // for DB reads if you prefer anon reads
+import { supabaseAdmin } from "@/lib/supabaseAdmin"; // server-only client for signed URLs
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
 export default async function Page({ params }: Props) {
-  const { id } = await params; // ✅ FIX
+  const { id } = await params;
 
-  // Fetch DB row
+  // Fetch DB row (use anon or admin client depending on your RLS)
   const { data, error } = await supabase
     .from("screenshots")
     .select("*")
@@ -18,19 +20,33 @@ export default async function Page({ params }: Props) {
     return <p className="p-8 text-center text-red-500">Not found</p>;
   }
 
+  // Check expiry
   if (new Date() > new Date(data.expires_at)) {
     return <p className="p-8 text-center text-red-500">Link expired</p>;
   }
 
-  // Fetch public URL (or signed URL)
-  const { data: urlData } = supabase.storage
+  // Create a signed URL using the admin client (private bucket)
+  const { data: signedData, error: signErr } = await supabaseAdmin.storage
     .from("screenshots")
-    .getPublicUrl(data.storage_path);
+    .createSignedUrl(data.storage_path, 60 * 60 * 24); // 24 hours
+
+  if (signErr || !signedData?.signedUrl) {
+    console.error("Signed URL generation error:", signErr);
+    return <p className="p-8 text-center text-red-500">Could not generate image link</p>;
+  }
+
+  const signedUrl = signedData.signedUrl;
+  console.log("SIGNED URL:", signedUrl);
+
+  // Guard: avoid passing invalid value to <img src>
+  if (!signedUrl || typeof signedUrl !== "string") {
+    return <p className="p-8 text-center text-red-500">Invalid image URL</p>;
+  }
 
   return (
     <div className="flex justify-center items-center min-h-screen p-4">
-      <img 
-        src={urlData.publicUrl}
+      <img
+        src={signedUrl}
         alt="Uploaded Screenshot"
         className="max-h-[90vh] max-w-full rounded"
       />
